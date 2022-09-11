@@ -10,7 +10,16 @@ defmodule Couloir42ReverseProxy.Application do
     children = [
       # Starts a worker by calling: Couloir42ReverseProxy.Worker.start_link(arg)
       # {Couloir42ReverseProxy.Worker, arg}
-      {Plug.Cowboy, scheme: :http, plug: Couloir42ReverseProxy.Router, port: 4000}
+      {Plug.Cowboy, scheme: :http, plug: Couloir42ReverseProxy.Router, port: 4000},
+      {Plug.Cowboy,
+       scheme: :https,
+       plug: Couloir42ReverseProxy.Router,
+       port: 4443,
+       cipher_suite: :strong,
+       certfile: "priv/cert/cert.pem",
+       keyfile: "priv/cert/key.pem",
+       password: 1234,
+       otp_app: :couloir42_reverse_proxy}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

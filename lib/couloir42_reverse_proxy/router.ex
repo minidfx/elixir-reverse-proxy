@@ -1,6 +1,8 @@
 defmodule Couloir42ReverseProxy.Router do
   use Plug.Router
 
+  plug(Plug.SSL, hsts: true)
+
   if Mix.env() in [:dev, :test] do
     plug(Plug.Logger)
   end
@@ -8,5 +10,5 @@ defmodule Couloir42ReverseProxy.Router do
   plug(:match)
   plug(:dispatch)
 
-  forward("/", to: ReverseProxyPlug, upstream: "//192.168.1.155:9001")
+  forward("/", to: ReverseProxyPlug, upstream: "http://192.168.1.155:9001")
 end
