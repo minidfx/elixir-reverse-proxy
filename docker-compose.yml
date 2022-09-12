@@ -2,9 +2,9 @@ version: "3.9"
 services:
   proxy:
     build: .
-    image: minidfx/proxy:alpha
+    image: minidfx/reverse-proxy:alpha
     ports:
       - 80:4000
       - 443:4443
     environment:
-      - UPSTREAMS=foobar.localhost=http://www.example.com
+      - UPSTREAMS=foo.localhost=http://www.example.com,bar.localhost=http://www.perdu.com
