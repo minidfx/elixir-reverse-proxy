@@ -1,21 +1,24 @@
 defmodule Couloir42ReverseProxy.Router do
   use Plug.Router
 
-  plug(Plug.SSL, hsts: true)
+  alias Couloir42ReverseProxy.Upstream
+  alias Couloir42ReverseProxy.Upstreams
 
   if Mix.env() in [:dev, :test] do
+    plug(Plug.SSL, hsts: false)
     plug(Plug.Logger)
+  else
+    plug(Plug.SSL, hsts: true, secure_renegotiate: true, reuse_sessions: true)
   end
 
   plug(:match)
   plug(:dispatch)
 
-  for {match_domain, to} <-
-        Application.compile_env(:couloir42_reverse_proxy, :upstreams, []) do
+  for %Upstream{match_domain: x, upstream: y} <- Upstreams.read() do
     forward("/",
-      host: match_domain,
+      host: x,
       to: ReverseProxyPlug,
-      upstream: to
+      upstream: URI.to_string(y)
     )
   end
 
