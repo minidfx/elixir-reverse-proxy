@@ -6,3 +6,5 @@ services:
     ports:
       - 80:4000
       - 443:4443
+    environment:
+      - UPSTREAMS=foobar.localhost=http://www.example.com
