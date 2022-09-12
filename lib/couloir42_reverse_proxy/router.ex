@@ -10,5 +10,16 @@ defmodule Couloir42ReverseProxy.Router do
   plug(:match)
   plug(:dispatch)
 
-  forward("/", to: ReverseProxyPlug, upstream: "http://192.168.1.155:9001")
+  for {match_domain, to} <-
+        Application.compile_env(:couloir42_reverse_proxy, :upstreams, []) do
+    forward("/",
+      host: match_domain,
+      to: ReverseProxyPlug,
+      upstream: to
+    )
+  end
+
+  match _ do
+    send_resp(conn, 404, "oops")
+  end
 end
