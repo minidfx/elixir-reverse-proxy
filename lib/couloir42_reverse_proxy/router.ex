@@ -14,6 +14,8 @@ defmodule Couloir42ReverseProxy.Router do
   plug(:match)
   plug(:dispatch)
 
+  plug(Couloir42ReverseProxy.BeforeForward)
+
   for %Upstream{match_domain: x, upstream: y} <- Upstreams.read() do
     forward("/",
       host: x,
