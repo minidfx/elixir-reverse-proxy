@@ -5,21 +5,28 @@ defmodule Couloir42ReverseProxy.Application do
 
   use Application
 
+  alias Couloir42ReverseProxy.Upstreams
+
   @impl true
   def start(_type, _args) do
     children = [
       # Starts a worker by calling: Couloir42ReverseProxy.Worker.start_link(arg)
       # {Couloir42ReverseProxy.Worker, arg}
+      Couloir42ReverseProxy.Certbot,
       {Plug.Cowboy, scheme: :http, plug: Couloir42ReverseProxy.Router, port: 4000},
-      {Plug.Cowboy,
-       scheme: :https,
-       plug: Couloir42ReverseProxy.Router,
-       port: 4443,
-       cipher_suite: :strong,
-       certfile: "priv/cert/cert.pem",
-       keyfile: "priv/cert/key.pem",
-       password: 1234,
-       otp_app: :couloir42_reverse_proxy}
+      {
+        Plug.Cowboy,
+        # To support multi domains for SSL termination
+        scheme: :https,
+        plug: Couloir42ReverseProxy.RouterSSL,
+        port: 4443,
+        cipher_suite: :strong,
+        certfile: "priv/certs/self-signed/cert.pem",
+        keyfile: "priv/certs/self-signed/key.pem",
+        password: 1234,
+        otp_app: :couloir42_reverse_proxy,
+        sni_fun: &Upstreams.sni/1
+      }
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

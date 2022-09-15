@@ -1,4 +1,4 @@
-FROM elixir:1.14-slim
+FROM elixir:1.14-alpine
 
 LABEL Burgy Benjamin aka MiniDfx
 
@@ -14,6 +14,9 @@ EXPOSE 4443
 WORKDIR /app
 
 ENV MIX_ENV prod
+
+RUN apk add --update python3 py3-pip && \
+    apk add certbot
 
 RUN chmod +x entrypoint.sh && \
     mix local.hex --force && \

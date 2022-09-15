@@ -8,3 +8,5 @@ services:
       - 443:4443
     environment:
       - UPSTREAMS=foo.localhost=http://www.example.com,bar.localhost=http://www.perdu.com
+      - STAGING=true # Set to true for test purpose
+      - EMAIL=<your-email>
