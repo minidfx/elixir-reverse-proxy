@@ -1,33 +1,49 @@
 # Couloir42ReverseProxy
 
-The goal of the project is to be able to create a reverse proxy with SSL termination by implementating the [elixir-reverse-proxy](https://github.com/tallarium/reverse_proxy_plug) plug and with **the opportunity** to disable the forwarding requests if needed.
+The goal of the project is to be able to create a reverse proxy with SSL termination by implementating the [elixir-reverse-proxy](https://github.com/tallarium/reverse_proxy_plug) plug and with **the opportunity** to disable the forwarding requests if needed, adding an authentication, etc.
 
-## Installation
+## Quick start
 
-The best way to use this reverse proxy is by using Docker. Clone this project a run the following command.
+Update the **docker-compose.yml** with your preferences.
 
-> docker-compose up
+Then you have to set your **EMAIL** to the environment variable and the **UPSTREAMS** for generating the SSL certificates and forwarding the requests to your internal backends.
 
-For test purpose, the command will proxy the requests made to https://foorbar.localhost to http://www.example.com.
+For instance, the current **docker-compose.yml** file contains 2 upstreams configuration separated by a comma: `<domain>=<upstream-host>,<domain>=<upstream-host>,...`
 
-## Configuration
+### Example
 
-To configure the domains and the server targets, the environment UPSTREAMS has to be configured.
+```docker-compose
+version: "3.9"
+services:
+  proxy:
+    build: .
+    image: minidfx/reverse-proxy:alpha
+    ports:
+      - 80:4000
+      - 443:4443
+    environment:
+      - UPSTREAMS=foo.localhost=http://www.example.com,bar.localhost=http://www.perdu.com
+      - STAGING=<true|false> # Set to true for test purpose
+      - EMAIL=<your-email>
 
-For instance, the value for the **UPSTREAMS** environment variable with 
+```
 
-> foobar.localhost=http://www.example.com
+Then run it by executing the following command
 
- will proxy the requests to the domain **foobar.localhost** to **www.example.com** on the port **80**.
+```bash
+docker-compose up
+```
 
- If need more proxy, you can just set UPSTREAMS with additional servers using the separator **,**
-
- > foo.localhost=http://www.example.com,bar.localhost=http://www.perdu.com
+Have fun!
 
 ## SSL
 
-For test purpose a dummy certificate is used but you can set another certificate by replacing the files **priv/cert/cert.pem** and **priv/cert/key.pem**.
+By default, **a self-signed certificate is used** for securing the communication but a background process will try to generate an SSL certificate for the given domains.
 
-## TODO
+**IMPORTANT**: You custom domains MUST be reachable to successfully generate the certificates for your domains.
 
-Implement certbot for generating and renewing SSL certificates with the passing domain in the UPSTREAMS environnment variable.
+For generating the certificate, [certbot](https://certbot.eff.org) is used.
+
+## ROADMAP
+
+- Give the opportunity to protect using the basic authentication your backends by setting an environment variable.
