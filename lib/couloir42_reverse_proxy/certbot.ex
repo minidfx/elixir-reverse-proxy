@@ -107,7 +107,7 @@ defmodule Couloir42ReverseProxy.Certbot do
 
   defp create_missing_certificates([], []) do
     Logger.info("No new certificates to generate.")
-    {:ok, []}
+    []
   end
 
   defp create_missing_certificates([], upstreams) when is_list(upstreams) do

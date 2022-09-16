@@ -37,9 +37,7 @@ defmodule Couloir42ReverseProxy.Upstreams do
 
   # Internal
 
-  defp select_certificate(:not_found, hostname) do
-    raise "The upstream for the #{hostname} was not found."
-  end
+  defp select_certificate(:not_found, _hostname), do: :not_found
 
   defp select_certificate({:ok, %Upstream{match_domain: x}}, _hostname) do
     Certbot.read_certificates()
@@ -79,7 +77,7 @@ defmodule Couloir42ReverseProxy.Upstreams do
     {:error, "invalid upstream: #{error_message}"}
   end
 
-  defp to_options(nil), do: :undefined
+  defp to_options(:not_found), do: :undefined
 
   defp to_options(%Certificate{path: path, key_path: key_path}) do
     [
