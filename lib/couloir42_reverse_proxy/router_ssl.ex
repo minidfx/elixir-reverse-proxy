@@ -3,12 +3,18 @@ defmodule Couloir42ReverseProxy.RouterSSL do
 
   alias Couloir42ReverseProxy.Upstream
   alias Couloir42ReverseProxy.Upstreams
+  alias Couloir42ReverseProxy.Passwords
+
+  plug(Plug.Logger)
 
   if Mix.env() in [:dev, :test] do
     plug(Plug.SSL, hsts: false)
-    plug(Plug.Logger)
   else
     plug(Plug.SSL, hsts: true, secure_renegotiate: true, reuse_sessions: true)
+  end
+
+  if Passwords.compiled_read() |> Enum.any?() do
+    plug(Couloir42ReverseProxy.BasicAuth)
   end
 
   plug(:match)
@@ -16,7 +22,7 @@ defmodule Couloir42ReverseProxy.RouterSSL do
 
   plug(Couloir42ReverseProxy.BeforeForward)
 
-  for %Upstream{match_domain: x, upstream: y} <- Upstreams.read() do
+  for %Upstream{match_domain: x, upstream: y} <- Upstreams.compiled_read() do
     forward("/",
       host: x,
       to: ReverseProxyPlug,

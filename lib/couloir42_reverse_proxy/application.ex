@@ -12,6 +12,8 @@ defmodule Couloir42ReverseProxy.Application do
     children = [
       # Starts a worker by calling: Couloir42ReverseProxy.Worker.start_link(arg)
       # {Couloir42ReverseProxy.Worker, arg}
+      Couloir42ReverseProxy.Upstreams,
+      Couloir42ReverseProxy.Passwords,
       Couloir42ReverseProxy.Certbot,
       {Plug.Cowboy, scheme: :http, plug: Couloir42ReverseProxy.Router, port: 4000},
       {

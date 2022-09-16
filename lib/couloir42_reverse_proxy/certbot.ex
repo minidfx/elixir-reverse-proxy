@@ -117,7 +117,12 @@ defmodule Couloir42ReverseProxy.Certbot do
       upstreams
       |> Enum.map(fn %Upstream{match_domain: x} -> create_certficate(x) end)
       # Return only the successfull commands
-      |> Enum.filter(fn {status, _} -> status == :ok end)
+      |> Enum.filter(fn status ->
+        case status do
+          :error -> false
+          {:ok, _} -> true
+        end
+      end)
 
     Logger.info("Done.")
 
@@ -387,14 +392,14 @@ defmodule Couloir42ReverseProxy.Certbot do
        |> Enum.filter(fn x -> Enum.any?(x) end)}
 
   defp get_email!() do
-    case System.get_env("EMAIL") |> String.downcase() do
+    case System.get_env("EMAIL") do
       nil -> raise "The EMAIL was missing, cannot generate new certificate using certbot."
-      x -> x
+      x -> x |> String.downcase()
     end
   end
 
   defp is_staging?() do
-    case System.get_env("STAGING") |> String.downcase() do
+    case System.get_env("STAGING", "false") |> String.downcase() do
       "true" -> true
       _ -> false
     end

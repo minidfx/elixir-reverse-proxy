@@ -6,13 +6,13 @@ The goal of the project is to be able to create a reverse proxy with SSL termina
 
 Update the **docker-compose.yml** with your preferences.
 
-Then you have to set your **EMAIL** to the environment variable and the **UPSTREAMS** for generating the SSL certificates and forwarding the requests to your internal backends.
+Then you have to set your **EMAIL** as the environment variable and the **UPSTREAMS** for generating the SSL certificates and forwarding the requests to your internal backends.
 
 For instance, the current **docker-compose.yml** file contains 2 upstreams configuration separated by a comma: `<domain>=<upstream-host>,<domain>=<upstream-host>,...`
 
 ### Example
 
-```docker-compose
+```docker
 version: "3.9"
 services:
   proxy:
@@ -22,6 +22,7 @@ services:
       - 80:4000
       - 443:4443
     environment:
+      - PASSWORDS=foo.localhost=dXNlcm5hbWU6cGFzc3dvcmQ= # protect the foo.localhost domain with following the username 'username' and the password 'password'.
       - UPSTREAMS=foo.localhost=http://www.example.com,bar.localhost=http://www.perdu.com
       - STAGING=<true|false> # Set to true for test purpose
       - EMAIL=<your-email>
@@ -43,6 +44,16 @@ By default, **a self-signed certificate is used** for securing the communication
 **IMPORTANT**: You custom domains MUST be reachable to successfully generate the certificates for your domains.
 
 For generating the certificate, [certbot](https://certbot.eff.org) is used.
+
+## Basic authentication (optional)
+
+You have the opportunity to protect some domains by adding the **PASSWORDS** environment variable too: `<domain>=<password-encoded-in-base64>,<domain>=<password-encoded-in-base64>,...`
+
+**TIPS**: You can encode the passwords using the following command:
+
+```bash
+echo -n "username:password" | base64
+```
 
 ## ROADMAP
 

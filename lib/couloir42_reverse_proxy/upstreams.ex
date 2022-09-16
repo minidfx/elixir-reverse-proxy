@@ -1,14 +1,24 @@
 defmodule Couloir42ReverseProxy.Upstreams do
-  alias Couloir42ReverseProxy.Upstream
-  alias Couloir42ReverseProxy.Certbot
-  alias Couloir42ReverseProxy.Certificate
+  use Agent
 
   require Logger
 
+  alias Couloir42ReverseProxy.Upstream
+  alias Couloir42ReverseProxy.Certbot
+  alias Couloir42ReverseProxy.Certificate
+  alias Couloir42ReverseProxy.KeyValueParser
+
+  def start_link(_initial_value) do
+    Agent.start_link(fn -> %{} end, name: __MODULE__)
+  end
+
+  @doc """
+    Finds the upstream matching the given hostname.
+  """
   @spec sni(bitstring()) :: keyword()
   def sni(hostname) do
     find(hostname)
-    |> select_certificate(hostname)
+    |> select_certificate()
     |> to_options()
   end
 
@@ -16,8 +26,15 @@ defmodule Couloir42ReverseProxy.Upstreams do
     Reads and parses the upstreams defined in the UPSTREAMS environment variables.
   """
   @spec read() :: list(Upstream.t())
-  def read() do
-    System.get_env("UPSTREAMS") |> parse_upstreams()
+  def read(), do: internal_read() |> Map.values()
+
+  @doc """
+    Reads and parses the upstreams defined in the UPSTREAMS environment variables.
+  """
+  @spec compiled_read() :: list(Upstream.t())
+  def compiled_read() do
+    {before, _after} = load(%{})
+    before |> Map.values()
   end
 
   @doc """
@@ -25,11 +42,9 @@ defmodule Couloir42ReverseProxy.Upstreams do
   """
   @spec find(bitstring() | charlist()) :: {:ok, Upstream.t()} | :not_found
   def find(hostname) when is_bitstring(hostname) do
-    local_hostname = String.downcase(hostname)
-
-    case read() |> Enum.find(fn %Upstream{match_domain: x} -> x == local_hostname end) do
-      nil -> :not_found
-      x -> {:ok, x}
+    case internal_read() |> Map.fetch(String.downcase(hostname)) do
+      :error -> :not_found
+      {:ok, x} -> {:ok, x}
     end
   end
 
@@ -37,47 +52,48 @@ defmodule Couloir42ReverseProxy.Upstreams do
 
   # Internal
 
-  defp select_certificate(:not_found, _hostname), do: :not_found
+  defp internal_read(), do: Agent.get_and_update(__MODULE__, &load/1)
 
-  defp select_certificate({:ok, %Upstream{match_domain: x}}, _hostname) do
+  defp load(state) when is_map(state) and map_size(state) > 0,
+    do: {state, state}
+
+  defp load(state) when is_map(state) do
+    Logger.info("Loading upstreams ...")
+
+    upstreams =
+      KeyValueParser.read(
+        "UPSTREAMS",
+        fn {key, value} ->
+          {:ok,
+           %Upstream{
+             match_domain: String.downcase(key),
+             upstream: URI.parse(value)
+           }}
+        end
+      )
+
+    Logger.info("Done.")
+
+    new_state =
+      state |> Map.merge(Map.new(upstreams, fn %Upstream{match_domain: key} = x -> {key, x} end))
+
+    {new_state, new_state}
+  end
+
+  defp select_certificate(:not_found), do: :not_found
+
+  defp select_certificate({:ok, %Upstream{match_domain: x}}) do
     Certbot.read_certificates()
     |> Enum.filter(fn %Certificate{domains: domains} ->
       domains
-      |> Enum.filter(fn domain -> domain == x end)
+      |> Enum.filter(fn domain -> String.equivalent?(domain, x) end)
       |> Enum.any?()
     end)
     |> Enum.at(0)
   end
 
-  defp parse_upstreams(nil), do: []
-
-  defp parse_upstreams(raw) when is_bitstring(raw) do
-    raw
-    |> String.split(",", trim: true)
-    |> Enum.map(fn x -> x |> String.split("=") |> create_upstream!() end)
-    |> Enum.filter(&filter_invalid_upstream/1)
-    |> Enum.map(fn {:ok, upstream} -> upstream end)
-  end
-
-  defp filter_invalid_upstream({:error, reason}) do
-    Logger.warn(reason)
-    false
-  end
-
-  defp filter_invalid_upstream({:ok, _upstream}) do
-    true
-  end
-
-  defp create_upstream!([match_domain, upstream]) do
-    {:ok, %Upstream{match_domain: String.downcase(match_domain), upstream: URI.parse(upstream)}}
-  end
-
-  defp create_upstream!(unknown) do
-    error_message = unknown |> Enum.join(",")
-    {:error, "invalid upstream: #{error_message}"}
-  end
-
   defp to_options(:not_found), do: :undefined
+  defp to_options(nil), do: :undefined
 
   defp to_options(%Certificate{path: path, key_path: key_path}) do
     [
