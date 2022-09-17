@@ -22,7 +22,7 @@ defmodule Couloir42ReverseProxy.RouterSSL do
 
   plug(Couloir42ReverseProxy.BeforeForward)
 
-  for %Upstream{match_domain: x, upstream: y} <- Upstreams.compiled_read() do
+  for %Upstream{match_domain: x, upstream: y} <- Upstreams.read(persist: false) do
     forward("/",
       host: x,
       to: ReverseProxyPlug,

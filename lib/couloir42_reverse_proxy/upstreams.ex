@@ -8,9 +8,8 @@ defmodule Couloir42ReverseProxy.Upstreams do
   alias Couloir42ReverseProxy.Certificate
   alias Couloir42ReverseProxy.KeyValueParser
 
-  def start_link(_initial_value) do
-    Agent.start_link(fn -> %{} end, name: __MODULE__)
-  end
+  def start_link(_initial_value),
+    do: Agent.start_link(fn -> %{} end, name: __MODULE__)
 
   @doc """
     Finds the upstream matching the given hostname.
@@ -25,16 +24,16 @@ defmodule Couloir42ReverseProxy.Upstreams do
   @doc """
     Reads and parses the upstreams defined in the UPSTREAMS environment variables.
   """
-  @spec read() :: list(Upstream.t())
-  def read(), do: internal_read() |> Map.values()
+  @spec read(keyword()) :: list(Upstream.t())
+  def read(opts \\ []) do
+    case Keyword.fetch(opts, :persist) do
+      {:ok, false} ->
+        {before, _after} = load(%{})
+        before |> Map.values()
 
-  @doc """
-    Reads and parses the upstreams defined in the UPSTREAMS environment variables.
-  """
-  @spec compiled_read() :: list(Upstream.t())
-  def compiled_read() do
-    {before, _after} = load(%{})
-    before |> Map.values()
+      _ ->
+        internal_read() |> Map.values()
+    end
   end
 
   @doc """
@@ -92,12 +91,26 @@ defmodule Couloir42ReverseProxy.Upstreams do
     |> Enum.at(0)
   end
 
-  defp to_options(:not_found), do: :undefined
-  defp to_options(nil), do: :undefined
+  defp to_options(:not_found),
+    do:
+      to_options(
+        Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_certfile),
+        Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_keyfile)
+      )
 
-  defp to_options(%Certificate{path: path, key_path: key_path}) do
+  defp to_options(nil),
+    do:
+      to_options(
+        Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_certfile),
+        Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_keyfile)
+      )
+
+  defp to_options(%Certificate{path: path, key_path: key_path}),
+    do: to_options(path, key_path)
+
+  defp to_options(cert_path, key_path) do
     [
-      certfile: path,
+      certfile: cert_path,
       keyfile: key_path
     ]
   end

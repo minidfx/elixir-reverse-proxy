@@ -15,16 +15,16 @@ defmodule Couloir42ReverseProxy.Application do
       Couloir42ReverseProxy.Upstreams,
       Couloir42ReverseProxy.Passwords,
       Couloir42ReverseProxy.Certbot,
-      {Plug.Cowboy, scheme: :http, plug: Couloir42ReverseProxy.Router, port: 4000},
+      {Plug.Cowboy, scheme: :http, plug: Couloir42ReverseProxy.Router, port: 80},
       {
         Plug.Cowboy,
         # To support multi domains for SSL termination
         scheme: :https,
         plug: Couloir42ReverseProxy.RouterSSL,
-        port: 4443,
+        port: 443,
         cipher_suite: :strong,
-        certfile: "priv/certs/self-signed/cert.pem",
-        keyfile: "priv/certs/self-signed/key.pem",
+        certfile: Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_certfile),
+        keyfile: Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_keyfile),
         password: 1234,
         otp_app: :couloir42_reverse_proxy,
         sni_fun: &Upstreams.sni/1

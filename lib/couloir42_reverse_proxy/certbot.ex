@@ -12,18 +12,25 @@ defmodule Couloir42ReverseProxy.Certbot do
   def start_link(default) when is_list(default) do
     {:ok, pid} = GenServer.start_link(__MODULE__, default, name: :certbot)
 
-    :ok =
-      GenServer.cast(:certbot, [
-        :read_certificates,
-        :renew_certificates,
-        :create_missing_certificates
-      ])
+    :ok = GenServer.cast(pid, [:read_certificates, :schedule_renewal_certificates])
 
     {:ok, pid}
   end
 
   @spec read_certificates :: list(Certificate.t())
   def read_certificates(), do: GenServer.call(:certbot, :read_certificates)
+
+  @spec refresh() :: :ok | {:error, String.t()}
+  def refresh() do
+    with {:ok, certificates} <- internal_read_certificates(),
+         {:ok, _commands} <- renew_certficates({:ok, certificates}),
+         upstreams <- Upstreams.read(persist: false),
+         _ <- create_missing_certificates(certificates, upstreams) do
+      :ok
+    else
+      _ -> {:error, "An error occurred, please check the previous error message."}
+    end
+  end
 
   # Servers (callbacks)
 
@@ -47,17 +54,16 @@ defmodule Couloir42ReverseProxy.Certbot do
   end
 
   @impl true
-  def handle_cast(
-        [:read_certificates, :renew_certificates, :create_missing_certificates],
-        state
-      ) do
-    case internal_read_certificates() |> schedule_renewal() do
-      :error ->
-        {:noreply, state}
-
-      {:ok, certificates} ->
-        :ok = GenServer.cast(:certbot, :create_missing_certificates)
-        {:noreply, Keyword.put_new(state, :certificates, certificates)}
+  def handle_cast([:read_certificates, :schedule_renewal_certificates], state) do
+    with {:ok, certificates} <- internal_read_certificates(),
+         :ok <-
+           Logger.info("Scheduling the renewal for #{Enum.count(certificates)} certificates ..."),
+         :ok <- schedule_renewal(certificates),
+         {:ok, new_certificates} <- internal_read_certificates(),
+         :ok <- Logger.info("Certificate renewal scheduled.") do
+      {:noreply, Keyword.put(state, :certificates, new_certificates)}
+    else
+      _ -> {:noreply, state}
     end
   end
 
@@ -68,28 +74,7 @@ defmodule Couloir42ReverseProxy.Certbot do
         {:noreply, state}
 
       {:ok, certificates} ->
-        {:noreply, Keyword.put_new(state, :certificates, certificates)}
-    end
-  end
-
-  @impl true
-  def handle_cast(:create_missing_certificates, state) do
-    certificates =
-      case state |> Keyword.fetch(:certificates) do
-        :error -> :not_found
-        {:ok, x} -> {:ok, x}
-      end
-
-    case certificates do
-      :not_found ->
-        {:noreply, state}
-
-      {:ok, certificates} ->
-        if create_missing_certificates(certificates, Upstreams.read()) |> Enum.any?() do
-          :ok = GenServer.cast(:certbot, :read_certificates)
-        end
-
-        {:noreply, state}
+        {:noreply, Keyword.put(state, :certificates, certificates)}
     end
   end
 
@@ -164,9 +149,9 @@ defmodule Couloir42ReverseProxy.Certbot do
   defp schedule_renewal([]), do: :ok
 
   defp schedule_renewal([certificate | tail]) do
-    %Certificate{expiry: expiry, name: name} = certificate
+    %Certificate{name: name} = certificate
 
-    waiting_time_in_days = Kernel.abs(Date.diff(expiry, Date.utc_today()))
+    {_, waiting_time_in_days} = is_expired(certificate)
     waiting_time_in_milli_seconds = waiting_time_in_days * 3600 * 24 * 1000
 
     Logger.info(
@@ -191,19 +176,24 @@ defmodule Couloir42ReverseProxy.Certbot do
   defp internal_read_certificates() do
     Logger.info("Reading the certificates ...")
 
-    cmd("certbot", ["certificates"])
-    |> post_command()
-    |> parse_result([
-      ~r/Certificate Name: ([^\n]*)/,
-      ~r/Domains: ([^\n]*)/,
-      ~r/Expiry Date: (\d{4}-\d{2}-\d{2})/,
-      ~r/Certificate Path: ([^\n]*)/,
-      ~r/Private Key Path: ([^\n]*)/,
-      ~r/Serial Number: ([^\n]*)/
-    ])
-    |> group_by_certificate()
-    |> select_first_capture_by_certificate()
-    |> post_parsing()
+    result =
+      cmd("certbot", ["certificates"])
+      |> post_command()
+      |> parse_result([
+        ~r/Certificate Name: ([^\n]*)/,
+        ~r/Domains: ([^\n]*)/,
+        ~r/Expiry Date: (\d{4}-\d{2}-\d{2})/,
+        ~r/Certificate Path: ([^\n]*)/,
+        ~r/Private Key Path: ([^\n]*)/,
+        ~r/Serial Number: ([^\n]*)/
+      ])
+      |> group_by_certificate()
+      |> select_first_capture_by_certificate()
+      |> post_parsing()
+
+    Logger.info("Done")
+
+    result
   end
 
   defp create_certficate(hostname) do
@@ -216,6 +206,8 @@ defmodule Couloir42ReverseProxy.Certbot do
   defp renew_certficates({:ok, certificates}) when is_list(certificates) do
     {:ok,
      certificates
+     |> Enum.map(&is_expired/1)
+     |> Enum.filter(&match?({:expired, _}, &1))
      |> Enum.map(fn %Certificate{domains: domains} = certificate ->
        _ = domains |> Enum.map(fn x -> renew_certficate(x) end)
        certificate
@@ -253,13 +245,11 @@ defmodule Couloir42ReverseProxy.Certbot do
   defp create_arguments_to_create_certificate(hostname) do
     args = [
       "certonly",
-      "--webroot",
+      "--standalone",
       "-m",
       get_email!(),
       "-d",
       hostname,
-      "-w",
-      "priv/static",
       "-n",
       "--agree-tos"
     ]
@@ -402,6 +392,16 @@ defmodule Couloir42ReverseProxy.Certbot do
     case System.get_env("STAGING", "false") |> String.downcase() do
       "true" -> true
       _ -> false
+    end
+  end
+
+  defp is_expired(%Certificate{expiry: expiry}) do
+    expiration_days = Kernel.abs(Date.diff(expiry, Date.utc_today()))
+
+    if expiration_days < 1 do
+      {:expired, expiration_days}
+    else
+      {:ok, expiration_days}
     end
   end
 

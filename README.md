@@ -19,8 +19,8 @@ services:
     build: .
     image: minidfx/reverse-proxy:alpha
     ports:
-      - 80:4000
-      - 443:4443
+      - 80:80
+      - 443:443
     environment:
       - PASSWORDS=foo.localhost=dXNlcm5hbWU6cGFzc3dvcmQ= # protect the foo.localhost domain with following the username 'username' and the password 'password'.
       - UPSTREAMS=foo.localhost=http://www.example.com,bar.localhost=http://www.perdu.com
