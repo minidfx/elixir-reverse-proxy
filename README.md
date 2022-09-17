@@ -54,7 +54,3 @@ You have the opportunity to protect some domains by adding the **PASSWORDS** env
 ```bash
 echo -n "username:password" | base64
 ```
-
-## ROADMAP
-
-- Give the opportunity to protect using the basic authentication your backends by setting an environment variable.
