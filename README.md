@@ -41,7 +41,7 @@ Have fun!
 
 By default, **a self-signed certificate is used** for securing the communication but a background process will try to generate an SSL certificate for the given domains.
 
-**IMPORTANT**: You custom domains MUST be reachable to successfully generate the certificates for your domains.
+**IMPORTANT**: Your custom domains MUST be reachable to successfully generate the certificates for your domains.
 
 For generating the certificate, [certbot](https://certbot.eff.org) is used.
 
