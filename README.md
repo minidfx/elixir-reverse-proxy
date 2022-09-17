@@ -12,7 +12,7 @@ For instance, the current **docker-compose.yml** file contains 2 upstreams confi
 
 ### Example
 
-```docker
+```yaml
 version: "3.9"
 services:
   proxy:
@@ -31,7 +31,7 @@ services:
 
 Then run it by executing the following command
 
-```bash
+```shell
 docker-compose up
 ```
 
@@ -51,6 +51,6 @@ You have the opportunity to protect some domains by adding the **PASSWORDS** env
 
 **TIPS**: You can encode the passwords using the following command:
 
-```bash
+```shell
 echo -n "username:password" | base64
 ```
