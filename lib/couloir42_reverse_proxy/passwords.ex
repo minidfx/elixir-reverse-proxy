@@ -1,8 +1,6 @@
 defmodule Couloir42ReverseProxy.Passwords do
   use Agent
 
-  require Logger
-
   alias Couloir42ReverseProxy.Password
   alias Couloir42ReverseProxy.KeyValueParser
 
@@ -38,8 +36,6 @@ defmodule Couloir42ReverseProxy.Passwords do
     do: {state, state}
 
   defp load(state) when is_map(state) do
-    Logger.info("Loading passwords ...")
-
     passwords =
       KeyValueParser.read(
         "PASSWORDS",
@@ -51,8 +47,6 @@ defmodule Couloir42ReverseProxy.Passwords do
            }}
         end
       )
-
-    Logger.info("Done")
 
     new_state =
       state |> Map.merge(Map.new(passwords, fn %Password{match_domain: key} = x -> {key, x} end))

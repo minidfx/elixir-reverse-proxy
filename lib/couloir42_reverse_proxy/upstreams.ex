@@ -1,8 +1,6 @@
 defmodule Couloir42ReverseProxy.Upstreams do
   use Agent
 
-  require Logger
-
   alias Couloir42ReverseProxy.Upstream
   alias Couloir42ReverseProxy.Certbot
   alias Couloir42ReverseProxy.Certificate
@@ -57,8 +55,6 @@ defmodule Couloir42ReverseProxy.Upstreams do
     do: {state, state}
 
   defp load(state) when is_map(state) do
-    Logger.info("Loading upstreams ...")
-
     upstreams =
       KeyValueParser.read(
         "UPSTREAMS",
@@ -70,8 +66,6 @@ defmodule Couloir42ReverseProxy.Upstreams do
            }}
         end
       )
-
-    Logger.info("Done.")
 
     new_state =
       state |> Map.merge(Map.new(upstreams, fn %Upstream{match_domain: key} = x -> {key, x} end))
