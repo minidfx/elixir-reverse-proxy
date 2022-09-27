@@ -1,6 +1,8 @@
+![Travis (.com)](https://img.shields.io/travis/com/minidfx/elixir-reverse-proxy)
+
 # Couloir42ReverseProxy
 
-The goal of the project is to be able to create a reverse proxy with SSL termination by implementating the [elixir-reverse-proxy](https://github.com/tallarium/reverse_proxy_plug) plug and with **the opportunity** to disable the forwarding requests if needed, adding an authentication, etc.
+This is standalone reverse proxy dockerized implementing the [elixir-reverse-proxy](https://github.com/tallarium/reverse_proxy_plug) plug. The goal of the project is to be able to easily configure domains for automatically generating/renewing the SSL certificates using cerbot. Optionaly you can protect your upstreams using the basic authentication.
 
 ## Quick start
 
@@ -26,7 +28,6 @@ services:
       - UPSTREAMS=foo.localhost=http://www.example.com,bar.localhost=http://www.perdu.com
       - STAGING=<true|false> # Set to true for test purpose
       - EMAIL=<your-email>
-
 ```
 
 Then run it by executing the following command
