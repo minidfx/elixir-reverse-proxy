@@ -220,7 +220,7 @@ defmodule Couloir42ReverseProxy.Certbot do
   end
 
   defp create_arguments_to_renew_certificate(hostname) do
-    args = [
+    [
       "renew",
       "--webroot",
       "-w",
@@ -231,19 +231,11 @@ defmodule Couloir42ReverseProxy.Certbot do
       "--agree-tos",
       "-q"
     ]
-
-    args =
-      if is_staging?() do
-        args ++ ["--staging"]
-      else
-        args
-      end
-
-    args
+    |> append("--staging", &is_staging?/0)
   end
 
   defp create_arguments_to_create_certificate(hostname) do
-    args = [
+    [
       "certonly",
       "--standalone",
       "-m",
@@ -253,15 +245,7 @@ defmodule Couloir42ReverseProxy.Certbot do
       "-n",
       "--agree-tos"
     ]
-
-    args =
-      if is_staging?() do
-        args ++ ["--staging"]
-      else
-        args
-      end
-
-    args
+    |> append("--staging", &is_staging?/0)
   end
 
   defp post_command({text, 0}), do: {:ok, text}
@@ -418,5 +402,10 @@ defmodule Couloir42ReverseProxy.Certbot do
     Logger.debug("Output: #{output}")
 
     cmd_result
+  end
+
+  defp append(list, item, predicate)
+    when is_function(predicate) and is_list(list) do
+    if predicate.(), do: list ++ [item], else: list
   end
 end
