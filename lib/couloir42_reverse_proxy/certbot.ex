@@ -20,24 +20,29 @@ defmodule Couloir42ReverseProxy.Certbot do
   @spec read_certificates :: list(Certificate.t())
   def read_certificates(), do: GenServer.call(:certbot, :read_certificates)
 
-  @spec refresh() :: :ok | {:error, String.t()}
+  @spec refresh() ::
+          :ok
+          | {:warning, String.t(), list({atom(), String.t(), Certificate.t()})}
+          | {:error, String.t()}
+          | {:error, String.t(), list({atom(), String.t()})}
   def refresh() do
     with {:ok, certificates} <- internal_read_certificates(),
-         {:ok, _commands} <- renew_certficates({:ok, certificates}),
+         {:ok, _commands} = renew_certificates(certificates),
          upstreams <- Upstreams.read(persist: false),
-         _ <- create_missing_certificates(certificates, upstreams) do
+         {:ok, _commands} <- create_missing_certificates(certificates, upstreams) do
       :ok
     else
-      _ -> {:error, "An error occurred, please check the previous error message."}
+      {:warning, results} when is_list(results) -> {:warning, "Some commands are invalid, check the inner results.", results}
+      {:error, reason, results} when is_list(results) -> {:error, reason, results}
+      {:error, reason} when is_bitstring(reason) -> {:error, reason}
     end
   end
 
   # Servers (callbacks)
 
   @impl true
-  def init(state) do
-    {:ok, state}
-  end
+  def init(state),
+    do: {:ok, state}
 
   @impl true
   def handle_call(:read_certificates, _from, state) do
@@ -48,7 +53,7 @@ defmodule Couloir42ReverseProxy.Certbot do
       end
 
     case certificates do
-      :error -> {:reply, [], state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
       {:ok, x} -> {:reply, x, Keyword.put_new(state, :certificates, x)}
     end
   end
@@ -56,11 +61,8 @@ defmodule Couloir42ReverseProxy.Certbot do
   @impl true
   def handle_cast([:read_certificates, :schedule_renewal_certificates], state) do
     with {:ok, certificates} <- internal_read_certificates(),
-         :ok <-
-           Logger.info("Scheduling the renewal for #{Enum.count(certificates)} certificates ..."),
          :ok <- schedule_renewal(certificates),
-         {:ok, new_certificates} <- internal_read_certificates(),
-         :ok <- Logger.info("Certificate renewal scheduled.") do
+         {:ok, new_certificates} <- internal_read_certificates() do
       {:noreply, Keyword.put(state, :certificates, new_certificates)}
     else
       _ -> {:noreply, state}
@@ -70,203 +72,208 @@ defmodule Couloir42ReverseProxy.Certbot do
   @impl true
   def handle_cast(:read_certificates, state) do
     case internal_read_certificates() do
-      :error ->
-        {:noreply, state}
-
-      {:ok, certificates} ->
-        {:noreply, Keyword.put(state, :certificates, certificates)}
+      {:ok, certificates} -> {:noreply, Keyword.put(state, :certificates, certificates)}
+      {:error, reason} -> {:stop, reason, state}
     end
   end
 
   @impl true
   def handle_info(:renew_certificates, state) do
-    case internal_read_certificates()
-         |> renew_certficates()
-         |> schedule_renewal() do
-      :error -> {:noreply, state}
-      {:ok, certificates} -> {:noreply, Keyword.put(state, :certificates, certificates)}
+    with {:ok, certificates} <- internal_read_certificates(),
+         {:ok, _results} <- renew_certificates(certificates) do
+      _ = certificates |> schedule_renewal()
+      {:noreply, Keyword.put(state, :certificates, certificates)}
+    else
+      {:warning, results} when is_list(results) ->
+        results
+        |> Enum.filter(&match?({:warning, _, _}, &1))
+        |> Enum.each(fn {:warning, reason, certificate} ->
+          _ =
+            certificate
+            |> schedule_renewal()
+
+          Logger.warn(reason)
+        end)
+
+        {:noreply, state}
+
+      {:error, reason} when is_bitstring(reason) ->
+        {:stop, reason, state}
     end
   end
 
   ## Internal
 
-  defp create_missing_certificates([], []) do
-    Logger.info("No new certificates to generate.")
-    []
-  end
+  defp create_missing_certificates([], []), do: {:ok, []}
 
   defp create_missing_certificates([], upstreams) when is_list(upstreams) do
-    Logger.info("Creating new certificates ...")
-
-    cmd_results =
+    results =
       upstreams
-      |> Enum.map(fn %Upstream{match_domain: x} -> create_certficate(x) end)
-      # Return only the successfull commands
-      |> Enum.filter(fn status ->
-        case status do
-          :error -> false
-          {:ok, _} -> true
-        end
-      end)
+      |> Enum.map(fn %Upstream{match_domain: x} -> create_certificate(x) end)
 
-    Logger.info("Done.")
+    error_results = results |> Enum.filter(&match?({:error, _}, &1))
 
-    cmd_results
+    if error_results |> Enum.any?() do
+      {:error, "Was not able to create some missing certificates, please check inner errors.", error_results}
+    else
+      {:ok, results}
+    end
   end
 
   defp create_missing_certificates(existing_certificates, upstreams) do
-    Logger.info("Creating missing certificates ...")
-
-    cmd_results =
+    results =
       upstreams
       |> Enum.reject(fn %Upstream{match_domain: match_domain} ->
         existing_certificates
-        |> Enum.any?(fn %Certificate{domains: domains} ->
+        |> Enum.map(fn %Certificate{domains: domains} ->
           domains
-          |> Enum.any?(fn domain ->
-            domain == match_domain
-          end)
+          |> Enum.any?(fn domain -> domain == match_domain end)
         end)
+        |> Enum.reduce([], fn x, acc -> [x | acc] end)
+        |> Enum.any?(fn x -> x end)
       end)
-      |> Enum.map(fn %Upstream{match_domain: x} -> create_certficate(x) end)
+      |> Enum.map(fn %Upstream{match_domain: x} -> create_certificate(x) end)
 
-    Logger.info("Done.")
+    error_results = results |> Enum.filter(&match?({:error, _}, &1))
 
-    cmd_results
-  end
-
-  defp schedule_renewal(:error), do: :error
-  defp schedule_renewal({:ok, []}), do: {:ok, []}
-
-  defp schedule_renewal({:ok, certificates}) do
-    Logger.info("Scheduling the renewal for #{Enum.count(certificates)} certificates ...")
-
-    :ok = schedule_renewal(certificates)
-
-    {:ok, certificates}
+    if error_results |> Enum.any?() do
+      {:error, "Was not able to create some missing certificates, please check inner errors.", error_results}
+    else
+      {:ok, results}
+    end
   end
 
   defp schedule_renewal([]), do: :ok
 
-  defp schedule_renewal([certificate | tail]) do
-    %Certificate{name: name} = certificate
+  defp schedule_renewal(results) when is_list(results) do
+    results
+    |> Enum.filter(&match?({:ok, _, _}, &1))
+    |> Enum.map(fn {:ok, _, x} -> x end)
+    |> Enum.each(&schedule_renewal/1)
+  end
 
+  defp schedule_renewal(%Certificate{} = certificate) do
     {_, waiting_time_in_days} = is_expired(certificate)
     waiting_time_in_milli_seconds = waiting_time_in_days * 3600 * 24 * 1000
-
-    Logger.info(
-      "Scheduling the #{name} renewal in #{Integer.to_string(waiting_time_in_days)} days ..."
-    )
 
     _ =
       if waiting_time_in_days == 0 do
         GenServer.cast(:certbot, :renew_certificates)
       else
         # FIXME: We have to save the previous schedules.
-        Process.send_after(
-          :certbot,
-          :renew_certificates,
-          waiting_time_in_milli_seconds
-        )
+        _ =
+          Process.send_after(
+            :certbot,
+            :renew_certificates,
+            waiting_time_in_milli_seconds
+          )
       end
 
-    schedule_renewal(tail)
+    :ok
   end
 
   defp internal_read_certificates() do
-    Logger.info("Reading the certificates ...")
+    case cmd("certbot", ["certificates"]) do
+      {text, 0} ->
+        certificates =
+          text
+          |> parse_result([
+            ~r/Certificate Name: ([^\n]*)/,
+            ~r/Domains: ([^\n]*)/,
+            ~r/Expiry Date: (\d{4}-\d{2}-\d{2})/,
+            ~r/Certificate Path: ([^\n]*)/,
+            ~r/Private Key Path: ([^\n]*)/,
+            ~r/Serial Number: ([^\n]*)/
+          ])
+          |> group_by_certificate()
+          |> select_first_capture_by_certificate()
+          |> certificates_factory()
 
-    result =
-      cmd("certbot", ["certificates"])
-      |> post_command()
-      |> parse_result([
-        ~r/Certificate Name: ([^\n]*)/,
-        ~r/Domains: ([^\n]*)/,
-        ~r/Expiry Date: (\d{4}-\d{2}-\d{2})/,
-        ~r/Certificate Path: ([^\n]*)/,
-        ~r/Private Key Path: ([^\n]*)/,
-        ~r/Serial Number: ([^\n]*)/
-      ])
-      |> group_by_certificate()
-      |> select_first_capture_by_certificate()
-      |> post_parsing()
+        {:ok, certificates}
 
-    Logger.info("Done")
-
-    result
+      {error, code} ->
+        {:error, "Was not able to read the certificate: #{Integer.to_string(code)}, #{error}"}
+    end
   end
 
-  defp create_certficate(hostname) do
-    cmd("certbot", create_arguments_to_create_certificate(hostname))
-    |> post_command(hostname)
+  defp create_certificate(hostname) when is_bitstring(hostname) do
+    case cmd("certbot", create_arguments_to_create_certificate(hostname)) do
+      {text, 0} ->
+        {:ok, text}
+
+      {error, code} ->
+        {:error, "Was not able to create the certificate for #{hostname}: #{Integer.to_string(code)}, #{error}"}
+    end
   end
 
-  defp renew_certficates(:error), do: :error
+  defp renew_certificates([]), do: {:ok, []}
 
-  defp renew_certficates({:ok, certificates}) when is_list(certificates) do
-    {:ok,
-     certificates
-     |> Enum.map(&is_expired/1)
-     |> Enum.filter(&match?({:expired, _}, &1))
-     |> Enum.map(fn %Certificate{domains: domains} = certificate ->
-       _ = domains |> Enum.map(fn x -> renew_certficate(x) end)
-       certificate
-     end)}
+  defp renew_certificates(certificates) when is_list(certificates) do
+    results =
+      certificates
+      |> Enum.map(&is_expired/1)
+      |> Enum.filter(&match?({:expired, _}, &1))
+      |> Enum.map(fn certificate ->
+        %Certificate{domains: domains} = certificate
+
+        domains
+        |> Enum.map(fn x -> renew_certificate(x) end)
+        |> Enum.map(fn x ->
+          case x do
+            {:ok, text} -> {:ok, text, certificate}
+            {:warning, reason} -> {:warning, reason, certificate}
+          end
+        end)
+      end)
+      |> Enum.reduce([], fn x, acc -> x ++ acc end)
+
+    warning_results = results |> Enum.filter(&match?({:warning, _, _}, &1))
+
+    if warning_results |> Enum.any?() do
+      {:warning, warning_results}
+    else
+      {:ok, results}
+    end
   end
 
-  defp renew_certficate(hostname) when is_bitstring(hostname) do
-    cmd("certbot", create_arguments_to_renew_certificate(hostname))
-    |> post_command()
+  defp renew_certificate(hostname) when is_bitstring(hostname) do
+    case cmd("certbot", create_arguments_to_renew_certificate(hostname)) do
+      {text, 0} ->
+        {:ok, text}
+
+      {error, code} ->
+        {:error, "Was not able to renew the certificate for #{hostname}: #{Integer.to_string(code)}, #{error}"}
+    end
   end
 
-  defp create_arguments_to_renew_certificate(hostname) do
-    [
-      "renew",
-      "--webroot",
-      "-w",
-      "priv/static",
-      "--cert-name",
-      hostname,
-      "-n",
-      "--agree-tos",
-      "-q"
-    ]
-    |> append("--staging", &is_staging?/0)
-  end
+  defp create_arguments_to_renew_certificate(hostname),
+    do:
+      [
+        "renew",
+        "--webroot",
+        "-w",
+        "priv/static",
+        "--cert-name",
+        hostname,
+        "-n",
+        "--agree-tos",
+        "-q"
+      ]
+      |> append("--staging", &is_staging?/0)
 
-  defp create_arguments_to_create_certificate(hostname) do
-    [
-      "certonly",
-      "--standalone",
-      "-m",
-      get_email!(),
-      "-d",
-      hostname,
-      "-n",
-      "--agree-tos"
-    ]
-    |> append("--staging", &is_staging?/0)
-  end
-
-  defp post_command({text, 0}), do: {:ok, text}
-
-  defp post_command({error, code}) do
-    Logger.error("Was not able to read the certificates: #{Integer.to_string(code)}")
-    Logger.error(error)
-
-    :error
-  end
-
-  defp post_command({text, 0}, _hostname), do: {:ok, text}
-
-  defp post_command({error, code}, hostname) do
-    Logger.error(
-      "Was not able to create the certificate for #{hostname}: #{Integer.to_string(code)}"
-    )
-
-    Logger.error(error)
-    :error
-  end
+  defp create_arguments_to_create_certificate(hostname),
+    do:
+      [
+        "certonly",
+        "--standalone",
+        "-m",
+        get_email!(),
+        "-d",
+        hostname,
+        "-n",
+        "--agree-tos"
+      ]
+      |> append("--staging", &is_staging?/0)
 
   defp count_properties_by_certificate(results) when is_list(results) do
     # [
@@ -298,45 +305,37 @@ defmodule Couloir42ReverseProxy.Certbot do
     |> Enum.count()
   end
 
-  defp select_first_capture_by_certificate(:error), do: :error
+  defp select_first_capture_by_certificate([]), do: []
 
-  defp select_first_capture_by_certificate({:ok, results}) when is_list(results) do
-    {:ok,
-     results
-     |> Enum.map(fn certificate ->
-       # By certificate
-       certificate
-       |> Enum.map(
-         # select only the first capture
-         fn captures -> Enum.at(captures, 1) end
-       )
-     end)}
+  defp select_first_capture_by_certificate(results) when is_list(results) do
+    results
+    |> Enum.map(fn certificate ->
+      # By certificate
+      certificate
+      |> Enum.map(
+        # select only the first capture
+        fn captures -> Enum.at(captures, 1) end
+      )
+    end)
   end
 
-  defp group_by_certificate(:error), do: :error
+  defp group_by_certificate([]), do: []
 
-  defp group_by_certificate({:ok, []}), do: {:ok, []}
-
-  defp group_by_certificate({:ok, results}) do
-    group_by =
-      0..(count_properties_by_certificate(results) - 1)
-      |> Enum.map(fn property_index ->
-        results
-        |> Enum.map(fn properties ->
-          properties |> Enum.at(property_index)
-        end)
+  defp group_by_certificate(captures) do
+    0..(count_properties_by_certificate(captures) - 1)
+    |> Enum.map(fn property_index ->
+      captures
+      |> Enum.map(fn properties ->
+        properties |> Enum.at(property_index)
       end)
-
-    {:ok, group_by}
+    end)
   end
 
-  defp post_parsing(:error), do: :error
+  defp certificates_factory(results) when is_list(results), do: certificate_factory(results, [])
 
-  defp post_parsing({:ok, results}) when is_list(results), do: post_parsing(results, [])
+  defp certificate_factory([], accumulator) when is_list(accumulator), do: accumulator
 
-  defp post_parsing([], accumulator) when is_list(accumulator), do: {:ok, accumulator}
-
-  defp post_parsing([certificate | tail], accumulator) when is_list(accumulator) do
+  defp certificate_factory([certificate | tail], accumulator) when is_list(accumulator) do
     certificate_name = certificate |> Enum.at(0)
     domains = certificate |> Enum.at(1) |> String.split(",", trim: true)
     expiry_date = Date.from_iso8601!(certificate |> Enum.at(2))
@@ -353,17 +352,14 @@ defmodule Couloir42ReverseProxy.Certbot do
       serial_number: serial_number
     }
 
-    post_parsing(tail, [certificate | accumulator])
+    certificate_factory(tail, [certificate | accumulator])
   end
 
-  defp parse_result(:error), do: :error
-
-  defp parse_result({:ok, text}, regexs),
+  defp parse_result(text, regexs),
     do:
-      {:ok,
-       regexs
-       |> Enum.map(fn x -> Regex.scan(x, text) end)
-       |> Enum.filter(fn x -> Enum.any?(x) end)}
+      regexs
+      |> Enum.map(fn x -> Regex.scan(x, text) end)
+      |> Enum.filter(fn x -> Enum.any?(x) end)
 
   defp get_email!() do
     case System.get_env("EMAIL") do
@@ -389,23 +385,10 @@ defmodule Couloir42ReverseProxy.Certbot do
     end
   end
 
-  defp cmd(command, arguments) when is_bitstring(command) and is_list(arguments) do
-    arguments_as_string = Enum.join(arguments, " ")
-
-    Logger.debug("Executing the following command: #{command} #{arguments_as_string} ...")
-
-    cmd_result = System.cmd(command, arguments, stderr_to_stdout: true)
-
-    {output, code} = cmd_result
-
-    Logger.debug("Exit code: #{code}")
-    Logger.debug("Output: #{output}")
-
-    cmd_result
-  end
+  defp cmd(command, arguments) when is_bitstring(command) and is_list(arguments),
+    do: System.cmd(command, arguments, stderr_to_stdout: true)
 
   defp append(list, item, predicate)
-    when is_function(predicate) and is_list(list) do
-    if predicate.(), do: list ++ [item], else: list
-  end
+       when is_function(predicate) and is_list(list),
+       do: if(predicate.(), do: list ++ [item], else: list)
 end
