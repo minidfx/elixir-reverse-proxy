@@ -48,8 +48,7 @@ defmodule Couloir42ReverseProxy.Passwords do
         end
       )
 
-    new_state =
-      state |> Map.merge(Map.new(passwords, fn %Password{match_domain: key} = x -> {key, x} end))
+    new_state = state |> Map.merge(Map.new(passwords, fn %Password{match_domain: key} = x -> {key, x} end))
 
     {new_state, new_state}
   end

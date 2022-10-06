@@ -2,8 +2,7 @@ defmodule Couloir42ReverseProxy.KeyValueParser do
   @doc """
     Reads and parses key value settings.
   """
-  @spec read(String.t(), ({String.t(), String.t()} -> {:ok, any} | {:error, String.t()})) ::
-          list(any)
+  @spec read(String.t(), ({String.t(), String.t()} -> {:ok, any} | {:error, String.t()})) :: list({String.t(), String.t()})
   def read(environment_variable_name, model_factory)
       when is_bitstring(environment_variable_name) do
     System.get_env(environment_variable_name) |> parse(model_factory)

@@ -5,11 +5,11 @@ defmodule KeyValueParserTest do
 
   alias Couloir42ReverseProxy.KeyValueParser
 
- test "read only invalid valid keys values." do
-   with_mock(System, get_env: fn _name -> "something" end) do
-     assert KeyValueParser.read("a variable name", fn _ -> {:ok, %{}} end) == []
-   end
- end
+  test "read only invalid valid keys values." do
+    with_mock(System, get_env: fn _name -> "something" end) do
+      assert KeyValueParser.read("a variable name", fn _ -> {:ok, %{}} end) == []
+    end
+  end
 
   test "read valid key values and skip bad values." do
     with_mock(System, get_env: fn _name -> "key=value,fdsfdsmk;fds,prizt=fedsfd" end) do

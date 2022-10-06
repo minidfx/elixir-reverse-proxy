@@ -14,9 +14,12 @@ defmodule Couloir42ReverseProxy.Upstreams do
   """
   @spec sni(bitstring()) :: keyword()
   def sni(hostname) do
-    find(hostname)
-    |> select_certificate()
-    |> to_options()
+    with {:ok, upstream} <- find(hostname),
+         {:ok, certificate} <- select_certificate(upstream) do
+      to_options(certificate)
+    else
+      :not_found -> to_options()
+    end
   end
 
   @doc """
@@ -37,7 +40,7 @@ defmodule Couloir42ReverseProxy.Upstreams do
   @doc """
    Finds and parses the upstreams and returns only the upstream which matches the hostname.
   """
-  @spec find(bitstring() | charlist()) :: {:ok, Upstream.t()} | :not_found
+  @spec find(String.t() | charlist()) :: {:ok, Upstream.t()} | :not_found
   def find(hostname) when is_bitstring(hostname) do
     case internal_read() |> Map.fetch(String.downcase(hostname)) do
       :error -> :not_found
@@ -67,32 +70,28 @@ defmodule Couloir42ReverseProxy.Upstreams do
         end
       )
 
-    new_state =
-      state |> Map.merge(Map.new(upstreams, fn %Upstream{match_domain: key} = x -> {key, x} end))
+    new_state = state |> Map.merge(Map.new(upstreams, fn %Upstream{match_domain: key} = x -> {key, x} end))
 
     {new_state, new_state}
   end
 
-  defp select_certificate(:not_found), do: :not_found
+  defp select_certificate(%Upstream{match_domain: x}) do
+    certificate =
+      Certbot.read_certificates()
+      |> Enum.filter(fn %Certificate{domains: domains} ->
+        domains
+        |> Enum.filter(fn domain -> String.equivalent?(domain, x) end)
+        |> Enum.any?()
+      end)
+      |> Enum.at(0)
 
-  defp select_certificate({:ok, %Upstream{match_domain: x}}) do
-    Certbot.read_certificates()
-    |> Enum.filter(fn %Certificate{domains: domains} ->
-      domains
-      |> Enum.filter(fn domain -> String.equivalent?(domain, x) end)
-      |> Enum.any?()
-    end)
-    |> Enum.at(0)
+    case certificate do
+      nil -> :not_found
+      x -> {:ok, x}
+    end
   end
 
-  defp to_options(:not_found),
-    do:
-      to_options(
-        Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_certfile),
-        Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_keyfile)
-      )
-
-  defp to_options(nil),
+  defp to_options(),
     do:
       to_options(
         Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_certfile),
