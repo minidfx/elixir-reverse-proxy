@@ -9,6 +9,8 @@ defmodule Couloir42ReverseProxy.Router do
   plug(:dispatch)
 
   match _ do
-    send_resp(conn, 404, "oops")
+    conn
+    |> Plug.Conn.resp(302, "")
+    |> Plug.Conn.put_resp_header("location", "http://www.perdu.com")
   end
 end
