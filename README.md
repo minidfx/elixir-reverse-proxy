@@ -1,4 +1,5 @@
-![Travis (.com)](https://img.shields.io/travis/com/minidfx/elixir-reverse-proxy)
+[![Build Status](https://app.travis-ci.com/minidfx/elixir-reverse-proxy.svg?branch=main)](https://app.travis-ci.com/minidfx/elixir-reverse-proxy)
+[![Last Updated](https://img.shields.io/github/last-commit/minidfx/elixir-reverse-proxy.svg)](https://github.com/minidfx/elixir-reverse-proxy/commits/master)
 
 # Couloir42ReverseProxy
 
