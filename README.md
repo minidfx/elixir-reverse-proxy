@@ -56,3 +56,8 @@ You have the opportunity to protect some domains by adding the **PASSWORDS** env
 ```shell
 echo -n "username:password" | base64
 ```
+
+TODO
+
+- Add telemetry for monitoring the reverse proxy
+- Support websocket
