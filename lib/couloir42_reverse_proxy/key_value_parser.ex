@@ -18,7 +18,7 @@ defmodule Couloir42ReverseProxy.KeyValueParser do
     |> String.split(",", trim: true)
     |> Enum.map(fn x ->
       x
-      |> String.split("=", trim: true)
+      |> String.split("=", trim: true, parts: 2)
       |> only_2_items()
       |> create_model(model_factory)
     end)
