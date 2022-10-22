@@ -14,19 +14,17 @@ defmodule Couloir42ReverseProxy.BasicAuth do
 
   @spec call(Plug.Conn.t(), any) :: Plug.Conn.t()
   def call(%Conn{host: host} = conn, _opts) do
-    case Passwords.find(host) do
-      {:ok, %Password{encoded_password: encoded_password}} ->
-        with {user, pass} <- Plug.BasicAuth.parse_basic_auth(conn),
-             true <- String.equivalent?("#{user}:#{pass}" |> Base.encode64(), encoded_password) do
-          user = %User{username: user, password: encoded_password}
-          conn |> Conn.assign(:current_user, user)
-        else
-          _ ->
-            conn |> Plug.BasicAuth.request_basic_auth() |> Conn.halt()
-        end
+    with {:ok, %Password{encoded_password: encoded_password}} <- Passwords.find(host),
+         {user, pass} <- Plug.BasicAuth.parse_basic_auth(conn),
+         true <- "#{user}:#{pass}" |> Base.encode64() |> String.equivalent?(encoded_password) do
+      user = %User{username: user, password: encoded_password}
+      conn |> Conn.assign(:current_user, user)
+    else
+      :not_found ->
+        conn
 
       _ ->
-        conn
+        conn |> Plug.BasicAuth.request_basic_auth() |> Conn.halt()
     end
   end
 end
