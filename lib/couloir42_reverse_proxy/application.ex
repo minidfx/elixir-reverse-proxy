@@ -25,6 +25,7 @@ defmodule Couloir42ReverseProxy.Application do
         cipher_suite: :strong,
         certfile: Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_certfile),
         keyfile: Application.get_env(:couloir42_reverse_proxy, :default_ssl_opts_keyfile),
+        password: 1234,
         otp_app: :couloir42_reverse_proxy,
         sni_fun: &Upstreams.sni/1
       }
