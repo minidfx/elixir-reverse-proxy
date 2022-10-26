@@ -28,7 +28,7 @@ defmodule Couloir42ReverseProxy.Certbot do
   def refresh() do
     with {:ok, certificates} <- internal_read_certificates(),
          {:ok, _commands} = renew_certificates(certificates),
-         upstreams <- Upstreams.read(persist: false),
+         upstreams <- Upstreams.compiled_read(persist: false),
          {:ok, _commands} <- create_missing_certificates(certificates, upstreams) do
       :ok
     else

@@ -25,8 +25,8 @@ defmodule Couloir42ReverseProxy.Upstreams do
   @doc """
     Reads and parses the upstreams defined in the UPSTREAMS environment variables.
   """
-  @spec read(keyword()) :: list(Upstream.t())
-  def read(opts \\ []) do
+  @spec compiled_read(keyword()) :: list(Upstream.t())
+  def compiled_read(opts \\ []) do
     case Keyword.fetch(opts, :persist) do
       {:ok, false} ->
         {before, _after} = load(%{})

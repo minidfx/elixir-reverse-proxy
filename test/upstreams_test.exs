@@ -10,7 +10,7 @@ defmodule UpstreamsTest do
   alias Couloir42ReverseProxy.Certificate
 
   test_with_mock "no upstreams specified.", KeyValueParser, read: fn _name, _factory -> [] end do
-    assert Upstreams.read(persist: false) == []
+    assert Upstreams.compiled_read(persist: false) == []
   end
 
   test "not found the upstream and get the default certificate." do
