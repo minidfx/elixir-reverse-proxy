@@ -31,6 +31,18 @@ defmodule Couloir42ReverseProxy.Application do
       }
     ]
 
+    # Start the Telemetry supervisor
+    :ok =
+      :telemetry.attach_many(
+        "proxy-telemetry-handler",
+        [
+          [:proxy, :request, :start],
+          [:proxy, :request, :stop]
+        ],
+        &Couloir42ReverseProxy.Telemetry.handle_event/4,
+        nil
+      )
+
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Couloir42ReverseProxy.Supervisor]

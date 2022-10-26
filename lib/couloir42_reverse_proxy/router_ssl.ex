@@ -5,6 +5,7 @@ defmodule Couloir42ReverseProxy.RouterSSL do
   alias Couloir42ReverseProxy.Upstreams
   alias Couloir42ReverseProxy.Passwords
 
+  plug(Plug.Telemetry, event_prefix: [:proxy, :request])
   plug(Plug.Logger)
 
   if Mix.env() in [:dev, :test] do

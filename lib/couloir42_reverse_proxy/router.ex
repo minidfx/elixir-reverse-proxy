@@ -1,8 +1,8 @@
 defmodule Couloir42ReverseProxy.Router do
   use Plug.Router
 
+  plug(Plug.Telemetry, event_prefix: [:proxy, :request])
   plug(Plug.Logger)
-
   plug(Plug.Static, from: "priv/static/.well-known", at: "/.well-known")
 
   plug(:match)
