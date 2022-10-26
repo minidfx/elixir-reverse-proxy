@@ -155,11 +155,15 @@ defmodule Couloir42ReverseProxy.Certbot do
   defp schedule_renewal(%Certificate{} = certificate) do
     {_, waiting_time_in_days} = is_expired(certificate)
     waiting_time_in_milli_seconds = waiting_time_in_days * 3600 * 24 * 1000
+    %Certificate{name: name} = certificate
 
     _ =
       if waiting_time_in_days == 0 do
+        Logger.info("Renewing the certificate #{name} ...")
         GenServer.cast(:certbot, :renew_certificates)
       else
+        Logger.info("Scheduling renewal of the cerfificate #{name} in #{waiting_time_in_days} days ...")
+
         # FIXME: We have to save the previous schedules.
         _ =
           Process.send_after(
