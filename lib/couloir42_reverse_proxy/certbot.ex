@@ -28,7 +28,7 @@ defmodule Couloir42ReverseProxy.Certbot do
           | {:error, String.t(), list({atom(), String.t()})}
   def refresh() do
     with {:ok, certificates} <- Certificates.read(),
-         {:ok, _commands} = renew_certificates(certificates),
+         {:ok, _commands} = internal_renew_certificates(certificates),
          upstreams <- Upstreams.compiled_read(persist: false),
          {:ok, _commands} <- create_missing_certificates(certificates, upstreams) do
       :ok
@@ -60,6 +60,32 @@ defmodule Couloir42ReverseProxy.Certbot do
   end
 
   @impl true
+  def handle_info(:renew_certificates, state) do
+    with {:ok, certificates} <- Certificates.read(),
+         {:ok, _} <- internal_renew_certificates(certificates),
+         :ok <- certificates |> schedule_renewal() do
+      _ = Logger.info("Certificated renewed.")
+      {:noreply, Keyword.put(state, :certificates, certificates)}
+    else
+      {:warning, results} when is_list(results) ->
+        results
+        |> Enum.filter(&match?({:warning, _, _}, &1))
+        |> Enum.each(fn {:warning, reason, certificate} ->
+          _ =
+            certificate
+            |> schedule_renewal()
+
+          _ = Logger.warn(reason)
+        end)
+
+        {:noreply, state}
+
+      {:error, reason} when is_bitstring(reason) ->
+        {:stop, reason, state}
+    end
+  end
+
+  @impl true
   def handle_cast([:read_certificates, :schedule_renewal_certificates], state) do
     with {:ok, certificates} <- Certificates.read(),
          :ok <- schedule_renewal(certificates),
@@ -81,31 +107,6 @@ defmodule Couloir42ReverseProxy.Certbot do
     case Certificates.read() do
       {:ok, certificates} -> {:noreply, Keyword.put(state, :certificates, certificates)}
       {:error, reason} -> {:stop, reason, state}
-    end
-  end
-
-  @impl true
-  def handle_info(:renew_certificates, state) do
-    with {:ok, certificates} <- Certificates.read(),
-         {:ok, _results} <- renew_certificates(certificates) do
-      _ = certificates |> schedule_renewal()
-      {:noreply, Keyword.put(state, :certificates, certificates)}
-    else
-      {:warning, results} when is_list(results) ->
-        results
-        |> Enum.filter(&match?({:warning, _, _}, &1))
-        |> Enum.each(fn {:warning, reason, certificate} ->
-          _ =
-            certificate
-            |> schedule_renewal()
-
-          Logger.warn(reason)
-        end)
-
-        {:noreply, state}
-
-      {:error, reason} when is_bitstring(reason) ->
-        {:stop, reason, state}
     end
   end
 
@@ -152,24 +153,23 @@ defmodule Couloir42ReverseProxy.Certbot do
 
   defp schedule_renewal([]), do: :ok
 
-  defp schedule_renewal(results) when is_list(results) do
-    results
-    |> Enum.filter(&match?({:ok, _, _}, &1))
-    |> Enum.map(fn {:ok, _, x} -> x end)
-    |> Enum.each(&schedule_renewal/1)
-  end
+  defp schedule_renewal(results) when is_list(results),
+    do:
+      results
+      |> Enum.each(&schedule_renewal/1)
 
   defp schedule_renewal(%Certificate{} = certificate) do
     {_, waiting_time_in_days} = is_expired(certificate)
-    waiting_time_in_milli_seconds = waiting_time_in_days * 3600 * 24 * 1000
+    # waiting_time_in_milli_seconds = waiting_time_in_days * 3600 * 24 * 1000
+    waiting_time_in_milli_seconds = 1 * 5000
     %Certificate{name: name} = certificate
 
     _ =
       if waiting_time_in_days == 0 do
         Logger.info("Renewing the certificate #{name} ...")
-        GenServer.cast(:certbot, :renew_certificates)
+        _ = GenServer.call(:certbot, :renew_certificates)
       else
-        Logger.info("Scheduling renewal of the cerfificate #{name} in #{waiting_time_in_days} days ...")
+        Logger.info("The cerfificate #{name} will be renewed in #{waiting_time_in_days} days ...")
 
         # FIXME: We have to save the previous schedules.
         _ =
@@ -193,9 +193,9 @@ defmodule Couloir42ReverseProxy.Certbot do
     end
   end
 
-  defp renew_certificates([]), do: {:ok, []}
+  defp internal_renew_certificates([]), do: {:ok, []}
 
-  defp renew_certificates(certificates) when is_list(certificates) do
+  defp internal_renew_certificates(certificates) when is_list(certificates) do
     results =
       certificates
       |> Enum.map(&is_expired/1)
@@ -204,7 +204,7 @@ defmodule Couloir42ReverseProxy.Certbot do
         %Certificate{domains: domains} = certificate
 
         domains
-        |> Enum.map(fn x -> renew_certificate(x) end)
+        |> Enum.map(fn x -> internal_renew_certificate(x) end)
         |> Enum.map(fn x ->
           case x do
             {:ok, text} -> {:ok, text, certificate}
@@ -223,7 +223,7 @@ defmodule Couloir42ReverseProxy.Certbot do
     end
   end
 
-  defp renew_certificate(hostname) when is_bitstring(hostname) do
+  defp internal_renew_certificate(hostname) when is_bitstring(hostname) do
     case cmd("certbot", create_arguments_to_renew_certificate(hostname)) do
       {text, 0} ->
         {:ok, text}
@@ -243,8 +243,7 @@ defmodule Couloir42ReverseProxy.Certbot do
         "--cert-name",
         hostname,
         "-n",
-        "--agree-tos",
-        "-q"
+        "--agree-tos"
       ]
       |> append("--staging", &is_staging?/0)
 

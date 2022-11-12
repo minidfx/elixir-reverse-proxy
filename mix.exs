@@ -22,7 +22,7 @@ defmodule Couloir42ReverseProxy.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:plug_cowboy, "~> 2.5"},
+      {:plug_cowboy, "~> 2.6"},
       {:cowboy_telemetry, "~> 0.4.0"},
       {:reverse_proxy_plug, "~> 2.1"},
       {:httpoison, "~> 1.8"},
